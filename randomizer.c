@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
+#include <string.h>
 #include "header.h"
 
 /**
@@ -11,9 +13,15 @@
  */
 int main(int argc, char const *argv[])
 {
+    int i;
     int randSize;
     int numThreads;
     int *randNums = NULL;
+    int fd[2];
+    char *args[3];
+    args[0] = malloc(sizeof(char) * 10);
+    args[1] = malloc(sizeof(char) * 10);
+    args[2] = malloc(sizeof(char) * 10);
 
     if (argc != 3)
     {
@@ -43,18 +51,40 @@ int main(int argc, char const *argv[])
         printf("Using %d threads\n", numThreads);
     }
 
+    fprintf(stderr, "Working up to randomize\n");
     randNums = generate(randSize);
 
+    if (pipe(fd) == -1)
+    {
+        perror("pipe");
+        exit(1);
+    }
+
+    dup2(fd[1], STDIN_FILENO);
+    strcpy(args[0], "./sorter");
+    strcpy(args[1], argv[1]);
+    strcpy(args[2], argv[2]);
+
+    for (i = 0; i < randSize; i++)
+    {
+        printf("%d ", randNums[i]);
+    }
+    printf("\n");
+    /* execv("./sorter", args); */
+    free(randNums);
+    free(args[0]);
+    free(args[1]);
+    free(args[2]);
     return 0;
 }
 
 int *generate(int size)
 {
-    int *randNums = malloc(sizeof(int) * size);
+    int i, *randNums = malloc(sizeof(int) * size);
     srand(time(NULL));
-    for (int i = 0; i < size; i++)
+    for (i = 0; i < size; i++)
     {
-        randNums[i] = rand();
+        randNums[i] = rand() % 201 + (-100);
     }
     return randNums;
 }
