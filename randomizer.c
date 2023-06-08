@@ -3,6 +3,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
+#include <wait.h>
 #include "header.h"
 
 /**
@@ -18,10 +19,7 @@ int main(int argc, char const *argv[])
     int numThreads;
     int *randNums = NULL;
     int fd[2];
-    char *args[3];
-    args[0] = malloc(sizeof(char) * 10);
-    args[1] = malloc(sizeof(char) * 10);
-    args[2] = malloc(sizeof(char) * 10);
+    int pid;
 
     if (argc != 3)
     {
@@ -51,7 +49,11 @@ int main(int argc, char const *argv[])
         printf("Using %d threads\n", numThreads);
     }
 
-    fprintf(stderr, "Working up to randomize\n");
+    if (numThreads > (randSize / 2))
+    {
+        numThreads = randSize / 2;
+    }
+
     randNums = generate(randSize);
 
     if (pipe(fd) == -1)
@@ -61,20 +63,31 @@ int main(int argc, char const *argv[])
     }
 
     dup2(fd[1], STDIN_FILENO);
-    strcpy(args[0], "./sorter");
-    strcpy(args[1], argv[1]);
-    strcpy(args[2], argv[2]);
 
     for (i = 0; i < randSize; i++)
     {
-        printf("%d ", randNums[i]);
+        write(fd[1], &randNums[i], sizeof(int));
     }
-    printf("\n");
-    /* execv("./sorter", args); */
+
+    /* Reset standard in to be orignial fileno */
+    dup2(0, fd[1]);
+
+    if ((pid = fork()) == -1)
+    {
+        perror("fork");
+        exit(1);
+    }
+    else if (pid == 0)
+    {
+        execl("./EvenOdd", "./EvenOdd", argv[2], NULL);
+        return 0;
+    }
+    else
+    {
+        wait(NULL);
+    }
+
     free(randNums);
-    free(args[0]);
-    free(args[1]);
-    free(args[2]);
     return 0;
 }
 
