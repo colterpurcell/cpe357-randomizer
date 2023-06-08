@@ -111,6 +111,7 @@ int *readIn(int *size)
 void synch(int *ready, int numThreads, int *phase, int *success, int *done, int id)
 {
     int i;
+    printf("Thread %d is ready\n", id);
     for (i = 0; i < numThreads; i++)
     {
         while (ready[i] == 0)
@@ -148,7 +149,7 @@ void synch(int *ready, int numThreads, int *phase, int *success, int *done, int 
 
 int *sort(int *nums, int numThreads, int size)
 {
-    int i, index = 0, pid;
+    int i, index = 0, pid, id;
     int *sorted = NULL;
     int *success = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     int *swapped = mmap(NULL, sizeof(int) * numThreads, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -173,54 +174,54 @@ int *sort(int *nums, int numThreads, int size)
     for (i = 0; i < numThreads; i++)
     {
         pid = fork();
-    }
-
-    if (pid == 0)
-    {
-        /* int success = 0;
-        while (1)
+        if (pid == 0)
         {
-            success = 1;
-            for (i = 0; i < numThreads; i++)
+            id = i;
+            /* int success = 0;
+            while (1)
             {
-                if (swapped[i] == 0)
+                success = 1;
+                for (i = 0; i < numThreads; i++)
                 {
-                    success = 0;
+                    if (swapped[i] == 0)
+                    {
+                        success = 0;
+                    }
+                    swapped[i] = 0;
                 }
-                swapped[i] = 0;
-            }
-            if (success)
-            {
-                break;
-            }
+                if (success)
+                {
+                    break;
+                }
 
-        } */
-        while (!(*success))
-        {
-            ready[i] = 0;
-            if (*phase % 2 == 0)
+            } */
+            while (!(*success))
             {
-                index = 2 * i;
-                if (index + 1 < size)
+                ready[id] = 0;
+                if (*phase % 2 == 0)
                 {
-                    swapped[i] = compare(sorted, index);
+                    for (i = 0; i < size / 2; i++)
+                    {
+                        index = 2 * i + id % 2;
+                        swapped[id] = compare(sorted, index);
+                    }
                 }
-            }
-            else
-            {
-                index = 2 * i + 1;
-                if (index + 1 < size)
+                else
                 {
-                    swapped[i] = compare(sorted, index);
+                    for (i = 0; i < size / 2; i++)
+                    {
+                        index = 2 * i + 1 - id % 2;
+                        swapped[id] = compare(sorted, index);
+                    }
                 }
+                ready[id] = 1;
+                synch(ready, numThreads, phase, success, swapped, id);
             }
-            ready[i] = 1;
-            synch(ready, numThreads, phase, success, swapped, i);
         }
-    }
-    else
-    {
-        wait(NULL);
+        else
+        {
+            wait(NULL);
+        }
     }
     return sorted;
 }
