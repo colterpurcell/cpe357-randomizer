@@ -3,7 +3,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
-#include <wait.h>
+#include <sys/wait.h>
 #include "header.h"
 
 /**

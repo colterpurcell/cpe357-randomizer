@@ -4,7 +4,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <wait.h>
+#include <sys/wait.h>
 #include <string.h>
 #include "header.h"
 
@@ -20,7 +20,10 @@ int main(int argc, char const *argv[])
     int numThreads;
     int size = 0;
     int *initial = NULL;
-    int *sorted = NULL;
+    int *ready = NULL;
+    pid_t *processes = NULL;
+    int *phase = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
     if (argc != 2)
     {
         printf("Usage: %s <number of threads>\n", argv[0]);
@@ -35,8 +38,6 @@ int main(int argc, char const *argv[])
     }
 
     initial = readIn(&size);
-    sorted = sort(initial, numThreads, size);
-
     printf("Initial list: [");
     for (i = 0; i < size; i++)
     {
@@ -48,19 +49,56 @@ int main(int argc, char const *argv[])
         printf("%d, ", initial[i]);
     }
 
-    printf("Sorted list: [");
+    *phase = 0;
+    ready = mmap(NULL, sizeof(int) * numThreads, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
+
+    for (i = 0; i < numThreads; i++)
+    {
+        ready[i] = 0;
+    }
+
+    /* Create a new process for each portion of the array */
+    for (i = 0; i < numThreads; i++)
+    {
+        /* Pass the start and end indices of the current portion of the array to the new process */
+        int j;
+        int id = i;
+        pid_t pid = fork();
+        if (pid == 0)
+        {
+            for (i = 0; i < size * 2; i++)
+            {
+                fprintf(stderr, "Phase: %d\n", *phase);
+                for (j = id * 2; j < size - 1; j += 2 * numThreads)
+                {
+                    if (evenOddSort(initial, j, phase, size))
+                        ;
+                }
+                ready[id] = 1;
+                synch(phase, ready, id, numThreads);
+            }
+        }
+    }
+
+    /* Wait for all of the processes to finish. */
+    for (i = 0; i < numThreads; i++)
+    {
+        waitpid(processes[i], NULL, 0);
+    }
+
+    printf("Final list: [");
     for (i = 0; i < size; i++)
     {
         if (i == size - 1)
         {
-            printf("%d]\n", sorted[i]);
+            printf("%d]\n", initial[i]);
             break;
         }
-        printf("%d, ", sorted[i]);
+        printf("%d, ", initial[i]);
     }
 
-    free(initial);
-    munmap(sorted, sizeof(int) * size);
+    free(processes);
     return 0;
 }
 
@@ -73,9 +111,10 @@ int *readIn(int *size)
 {
     int *nums = NULL;
     int i = 0;
+    int currSize = 16;
     int num;
 
-    nums = malloc(sizeof(int) * 16);
+    nums = mmap(NULL, sizeof(int) * 16, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
     while (scanf("%d", &num) == 1)
     {
@@ -85,7 +124,9 @@ int *readIn(int *size)
 
         if (i % 16 == 0)
         {
-            nums = realloc(nums, sizeof(int) * (i + 16));
+
+            nums = mremap(nums, sizeof(int) * currSize, sizeof(int) * (currSize + 16), MREMAP_MAYMOVE | MREMAP_FIXED, nums);
+            currSize += 16;
         }
 
         c = getchar();
@@ -108,132 +149,70 @@ int *readIn(int *size)
     return nums;
 }
 
-void synch(int *ready, int numThreads, int *phase, int *success, int *done, int id)
+void synch(int *phase, int *ready, int id, int numThreads)
 {
     int i;
-    printf("Thread %d is ready\n", id);
     for (i = 0; i < numThreads; i++)
     {
         while (ready[i] == 0)
-        {
-        }
+            ;
     }
+
     if (id == 0)
     {
-        *success = 1;
-        for (i = 0; i < numThreads; i++)
-        {
-            if (done[i] == 0)
-            {
-                *success = 0;
-            }
-            done[i] = 0;
-        }
-        (*phase)++;
+        *phase = *phase == 0 ? 1 : 0;
     }
     else
     {
-        for (i = 0; i < 100000; i++)
-        {
-        }
+        for (i = 0; i < 10000; i++)
+            ;
     }
+    ready[id] = 0;
 }
 
 /**
- * @brief sorts a list of numbers using a Odd-Even Transposition Sort,
- * forking off a user specified amount of threads. shared memory will be necessary.
- * @param nums the list of numbers to sort
- * @param numThreads the number of forks to use
- * @return a pointer to the sorted list of numbers
+ * @brief takes a list of numbers and sorts a given pair of indices
+ * @param nums the list of numbers
+ * @param id the id of the thread, also acts as first index and multiple of
+ * all other indices
  */
-
-int *sort(int *nums, int numThreads, int size)
+int evenOddSort(int *nums, int index, int *phase, int size)
 {
-    int i, index = 0, pid, id;
-    int *sorted = NULL;
-    int *success = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    int *swapped = mmap(NULL, sizeof(int) * numThreads, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    int *phase = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    int *ready = mmap(NULL, sizeof(int) * numThreads, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    sorted = mmap(NULL, sizeof(int) * size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-
-    *success = 0;
-    *phase = 0;
-
-    for (i = 0; i < numThreads; i++)
+    int i, swap = 0;
+    if (*phase == 0)
     {
-        ready[i] = 0;
-        swapped[i] = 0;
+        swap = compare(nums, index);
     }
-
-    for (i = 0; i < size; i++)
+    else
     {
-        sorted[i] = nums[i];
-    }
-
-    for (i = 0; i < numThreads; i++)
-    {
-        pid = fork();
-        if (pid == 0)
+        if (index + 1 < size)
         {
-            id = i;
-            /* int success = 0;
-            while (1)
+            swap = compare(nums, index + 1);
+        }
+    }
+    /*     printf("Sorted list: [");
+        for (i = 0; i < size; i++)
+        {
+            if (i == size - 1)
             {
-                success = 1;
-                for (i = 0; i < numThreads; i++)
-                {
-                    if (swapped[i] == 0)
-                    {
-                        success = 0;
-                    }
-                    swapped[i] = 0;
-                }
-                if (success)
-                {
-                    break;
-                }
-
-            } */
-            while (!(*success))
-            {
-                ready[id] = 0;
-                if (*phase % 2 == 0)
-                {
-                    for (i = 0; i < size / 2; i++)
-                    {
-                        index = 2 * i + id % 2;
-                        swapped[id] = compare(sorted, index);
-                    }
-                }
-                else
-                {
-                    for (i = 0; i < size / 2; i++)
-                    {
-                        index = 2 * i + 1 - id % 2;
-                        swapped[id] = compare(sorted, index);
-                    }
-                }
-                ready[id] = 1;
-                synch(ready, numThreads, phase, success, swapped, id);
+                printf("%d]\n", nums[i]);
+                break;
             }
-        }
-        else
-        {
-            wait(NULL);
-        }
-    }
-    return sorted;
+            printf("%d, ", nums[i]);
+        } */
+    return swap;
 }
 
-int compare(int *list, int index)
+int compare(int *nums, int index)
 {
-    int done = list[index] > list[index + 1] ? 1 : 0;
-    if (list[index] > list[index + 1])
+    int swap = nums[index] > nums[index + 1] ? 1 : 0;
+    if (nums[index] > nums[index + 1])
     {
-        int temp = list[index];
-        list[index] = list[index + 1];
-        list[index + 1] = temp;
+        int temp = nums[index];
+        fprintf(stderr, "swapping %d and %d\n", nums[index], nums[index + 1]);
+
+        nums[index] = nums[index + 1];
+        nums[index + 1] = temp;
     }
-    return done;
+    return swap;
 }
