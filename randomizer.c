@@ -104,6 +104,7 @@ int main(int argc, char const *argv[])
     }
 
     free(args[0]);
+    free(args[1]);
     free(randNums);
     return 0;
 }

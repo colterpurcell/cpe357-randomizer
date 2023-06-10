@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <semaphore.h>
 #include <string.h>
 #include "header.h"
 
@@ -20,11 +21,13 @@ int main(int argc, char const *argv[])
     int i;
     int numThreads;
     int size = 0;
+    int memSize = 0;
     struct timeval start, end, result;
     int *initial = NULL;
-    int *ready = NULL;
     pid_t *processes = NULL;
-    int *phase = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    sem_t *ready = NULL;
+    int *waiting = NULL;
+    int phase = 0;
 
     if (argc != 2)
     {
@@ -55,17 +58,13 @@ int main(int argc, char const *argv[])
         printf("%d, ", initial[i]);
     }
 
-    *phase = 1;
-    /* Initialize the lock */
-
-    /* Initialize the condition variable */
-    ready = mmap(NULL, sizeof(int) * numThreads, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
-
+    waiting = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    ready = mmap(NULL, numThreads * sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     for (i = 0; i < numThreads; i++)
     {
-        ready[i] = 0;
+        sem_init(&ready[i], 1, 0);
     }
+    processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
 
     /* Create a new process for each portion of the array */
     gettimeofday(&start, NULL);
@@ -79,18 +78,23 @@ int main(int argc, char const *argv[])
         {
             for (iter = 0; iter < size * 2; iter++)
             {
-                ready[id] = 0;
                 for (j = id * 2; j < size - 1; j += 2 * numThreads)
                 {
-                    evenOddSort(initial, j, phase, size);
+                    evenOddSort(initial, j, &phase, size);
                 }
-                ready[id] = 1;
-                synch(phase, ready, id, numThreads);
-                for (i = 0; i < 100000; i++)
-                    ;
+                synch(&phase, ready, id, numThreads, waiting);
             }
             return 0;
         }
+    }
+
+    if (size % 1024 == 0)
+    {
+        memSize = size;
+    }
+    else
+    {
+        memSize = size + (1024 - (size % 1024));
     }
 
     /* Wait for all of the processes to finish. */
@@ -114,10 +118,8 @@ int main(int argc, char const *argv[])
 
     printf("\nProcesses: %d\n", numThreads);
     printf("Time: %ld.%06ld seconds\n", result.tv_sec, result.tv_usec);
-
-    munmap(phase, sizeof(int));
     munmap(ready, sizeof(int) * numThreads);
-    munmap(initial, sizeof(int) * size);
+    munmap(initial, sizeof(int) * memSize);
     free(processes);
     return 0;
 }
@@ -167,27 +169,32 @@ int *readIn(int *size)
     }
 
     *size = i;
-
-    for (i = 0; i < *size; i++)
-    {
-        printf("%d\n", nums[i]);
-    }
     return nums;
 }
 
-void synch(int *phase, int *ready, int id, int numThreads)
+void synch(int *phase, sem_t *ready, int id, int numThreads, int *waiting)
 {
     int i;
-    for (i = 0; i < numThreads; i++)
+    usleep(1);
+    (*waiting)++;
+    if (*waiting >= numThreads)
     {
-        while (ready[i] != 1)
+        for (i = 0; i < numThreads; i++)
         {
+            sem_post(&ready[i]);
         }
+        *waiting = 0;
     }
-    if (id == 0)
+    else
     {
-        *phase = *phase ? 0 : 1;
+        sem_wait(&ready[id]);
     }
+
+    *phase = *phase + 1;
+    /* if last process to enter, wake all other processes */
+
+    for (i = 0; i < 100000; i++)
+        ;
 }
 
 /**
