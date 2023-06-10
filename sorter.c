@@ -25,7 +25,7 @@ int main(int argc, char const *argv[])
     struct timeval start, end, result;
     int *initial = NULL;
     pid_t *processes = NULL;
-    sem_t *ready = NULL;
+    int *ready = NULL;
     int *waiting = NULL;
     int phase = 0;
 
@@ -60,10 +60,7 @@ int main(int argc, char const *argv[])
 
     waiting = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     ready = mmap(NULL, numThreads * sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    for (i = 0; i < numThreads; i++)
-    {
-        sem_init(&ready[i], 1, 0);
-    }
+
     processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
 
     /* Create a new process for each portion of the array */
@@ -78,10 +75,12 @@ int main(int argc, char const *argv[])
         {
             for (iter = 0; iter < size * 2; iter++)
             {
+                ready[id] = 0;
                 for (j = id * 2; j < size - 1; j += 2 * numThreads)
                 {
                     evenOddSort(initial, j, &phase, size);
                 }
+                ready[id] = 1;
                 synch(&phase, ready, id, numThreads, waiting);
             }
             return 0;
@@ -172,22 +171,25 @@ int *readIn(int *size)
     return nums;
 }
 
-void synch(int *phase, sem_t *ready, int id, int numThreads, int *waiting)
+void synch(int *phase, int *ready, int id, int numThreads, int *waiting)
 {
     int i;
-    usleep(1);
     (*waiting)++;
     if (*waiting >= numThreads)
     {
         for (i = 0; i < numThreads; i++)
         {
-            sem_post(&ready[i]);
+            while (ready[i] != 1)
+            {
+            }
         }
         *waiting = 0;
     }
     else
     {
-        sem_wait(&ready[id]);
+        while (ready[id] != 1)
+        {
+        }
     }
 
     *phase = *phase + 1;
