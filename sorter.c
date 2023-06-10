@@ -6,8 +6,6 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
-#include <stdbool.h>
-#include <stdatomic.h>
 #include <string.h>
 #include "header.h"
 
