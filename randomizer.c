@@ -1,9 +1,11 @@
+#define _BSD_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 #include "header.h"
 
 /**
@@ -14,10 +16,11 @@
  */
 int main(int argc, char const *argv[])
 {
-    int i;
+    int i, j;
     int randSize;
     int numThreads;
     int *randNums = NULL;
+    char *args[3] = {NULL};
     int fd[2];
     int pid;
 
@@ -44,10 +47,6 @@ int main(int argc, char const *argv[])
         printf("Error: number of threads must be greater than 0\n");
         exit(1);
     }
-    else
-    {
-        printf("Using %d threads\n", numThreads);
-    }
 
     if (numThreads > (randSize / 2))
     {
@@ -55,6 +54,10 @@ int main(int argc, char const *argv[])
     }
 
     randNums = generate(randSize);
+    args[0] = malloc(sizeof(char) * 10);
+    strcpy(args[0], "./EvenOdd");
+    args[1] = malloc(sizeof(char) * 10);
+    sprintf(args[1], "%d", numThreads);
 
     if (pipe(fd) == -1)
     {
@@ -62,15 +65,8 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
-    dup2(fd[1], STDIN_FILENO);
-
-    for (i = 0; i < randSize; i++)
-    {
-        write(fd[1], &randNums[i], sizeof(int));
-    }
-
-    /* Reset standard in to be orignial fileno */
-    dup2(0, fd[1]);
+    /* Switch the reading end of the pipe to stdin */
+    dup2(fd[0], STDIN_FILENO);
 
     if ((pid = fork()) == -1)
     {
@@ -79,14 +75,35 @@ int main(int argc, char const *argv[])
     }
     else if (pid == 0)
     {
-        execl("./EvenOdd", "./EvenOdd", argv[2], NULL);
+        execv("./EvenOdd", args);
         return 0;
     }
     else
     {
+        for (i = 0; i < randSize; i++)
+        {
+            char strNum[100];
+
+            if (i == randSize - 1)
+            {
+                sprintf(strNum, "%d\n", randNums[i]);
+            }
+            else
+            {
+                sprintf(strNum, "%d ", randNums[i]);
+            }
+
+            for (j = 0; j < strlen(strNum); j++)
+            {
+                write(fd[1], &strNum[j], sizeof(char));
+            }
+        }
+        close(fd[1]);
+        dup2(0, fd[0]);
         wait(NULL);
     }
 
+    free(args[0]);
     free(randNums);
     return 0;
 }

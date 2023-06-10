@@ -1,10 +1,13 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <stdbool.h>
+#include <stdatomic.h>
 #include <string.h>
 #include "header.h"
 
@@ -19,6 +22,7 @@ int main(int argc, char const *argv[])
     int i;
     int numThreads;
     int size = 0;
+    struct timeval start, end, result;
     int *initial = NULL;
     int *ready = NULL;
     pid_t *processes = NULL;
@@ -38,18 +42,25 @@ int main(int argc, char const *argv[])
     }
 
     initial = readIn(&size);
+    if (numThreads > size / 2)
+    {
+        numThreads = size / 2;
+    }
     printf("Initial list: [");
     for (i = 0; i < size; i++)
     {
         if (i == size - 1)
         {
-            printf("%d]\n", initial[i]);
+            printf("%d]\n\n", initial[i]);
             break;
         }
         printf("%d, ", initial[i]);
     }
 
-    *phase = 0;
+    *phase = 1;
+    /* Initialize the lock */
+
+    /* Initialize the condition variable */
     ready = mmap(NULL, sizeof(int) * numThreads, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
 
@@ -59,25 +70,28 @@ int main(int argc, char const *argv[])
     }
 
     /* Create a new process for each portion of the array */
+    gettimeofday(&start, NULL);
     for (i = 0; i < numThreads; i++)
     {
         /* Pass the start and end indices of the current portion of the array to the new process */
-        int j;
+        int j, iter;
         int id = i;
         pid_t pid = fork();
         if (pid == 0)
         {
-            for (i = 0; i < size * 2; i++)
+            for (iter = 0; iter < size * 2; iter++)
             {
-                fprintf(stderr, "Phase: %d\n", *phase);
+                ready[id] = 0;
                 for (j = id * 2; j < size - 1; j += 2 * numThreads)
                 {
-                    if (evenOddSort(initial, j, phase, size))
-                        ;
+                    evenOddSort(initial, j, phase, size);
                 }
                 ready[id] = 1;
                 synch(phase, ready, id, numThreads);
+                for (i = 0; i < 100000; i++)
+                    ;
             }
+            return 0;
         }
     }
 
@@ -86,8 +100,10 @@ int main(int argc, char const *argv[])
     {
         waitpid(processes[i], NULL, 0);
     }
+    gettimeofday(&end, NULL);
+    timersub(&end, &start, &result);
 
-    printf("Final list: [");
+    printf("Final list:   [");
     for (i = 0; i < size; i++)
     {
         if (i == size - 1)
@@ -98,6 +114,12 @@ int main(int argc, char const *argv[])
         printf("%d, ", initial[i]);
     }
 
+    printf("\nProcesses: %d\n", numThreads);
+    printf("Time: %ld.%06ld seconds\n", result.tv_sec, result.tv_usec);
+
+    munmap(phase, sizeof(int));
+    munmap(ready, sizeof(int) * numThreads);
+    munmap(initial, sizeof(int) * size);
     free(processes);
     return 0;
 }
@@ -111,22 +133,23 @@ int *readIn(int *size)
 {
     int *nums = NULL;
     int i = 0;
-    int currSize = 16;
     int num;
+    int *temp;
 
-    nums = mmap(NULL, sizeof(int) * 16, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    nums = mmap(NULL, sizeof(int) * 1024, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
     while (scanf("%d", &num) == 1)
     {
-        char c;
+        int c;
         nums[i] = num;
         i++;
 
-        if (i % 16 == 0)
+        if (i % 1024 == 0)
         {
-
-            nums = mremap(nums, sizeof(int) * currSize, sizeof(int) * (currSize + 16), MREMAP_MAYMOVE | MREMAP_FIXED, nums);
-            currSize += 16;
+            temp = mmap(NULL, sizeof(int) * (i + 1024), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+            memcpy(temp, nums, sizeof(int) * i);
+            munmap(nums, sizeof(int) * i);
+            nums = temp;
         }
 
         c = getchar();
@@ -146,6 +169,11 @@ int *readIn(int *size)
     }
 
     *size = i;
+
+    for (i = 0; i < *size; i++)
+    {
+        printf("%d\n", nums[i]);
+    }
     return nums;
 }
 
@@ -154,20 +182,14 @@ void synch(int *phase, int *ready, int id, int numThreads)
     int i;
     for (i = 0; i < numThreads; i++)
     {
-        while (ready[i] == 0)
-            ;
+        while (ready[i] != 1)
+        {
+        }
     }
-
     if (id == 0)
     {
-        *phase = *phase == 0 ? 1 : 0;
+        *phase = *phase ? 0 : 1;
     }
-    else
-    {
-        for (i = 0; i < 10000; i++)
-            ;
-    }
-    ready[id] = 0;
 }
 
 /**
@@ -178,28 +200,18 @@ void synch(int *phase, int *ready, int id, int numThreads)
  */
 int evenOddSort(int *nums, int index, int *phase, int size)
 {
-    int i, swap = 0;
-    if (*phase == 0)
+    int swap = 0;
+    if (*phase % 2 == 0)
     {
         swap = compare(nums, index);
     }
     else
     {
-        if (index + 1 < size)
+        if (index + 1 < size - 1)
         {
             swap = compare(nums, index + 1);
         }
     }
-    /*     printf("Sorted list: [");
-        for (i = 0; i < size; i++)
-        {
-            if (i == size - 1)
-            {
-                printf("%d]\n", nums[i]);
-                break;
-            }
-            printf("%d, ", nums[i]);
-        } */
     return swap;
 }
 
@@ -209,8 +221,6 @@ int compare(int *nums, int index)
     if (nums[index] > nums[index + 1])
     {
         int temp = nums[index];
-        fprintf(stderr, "swapping %d and %d\n", nums[index], nums[index + 1]);
-
         nums[index] = nums[index + 1];
         nums[index + 1] = temp;
     }
