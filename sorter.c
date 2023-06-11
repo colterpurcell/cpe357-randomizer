@@ -26,7 +26,6 @@ int main(int argc, char const *argv[])
     int *initial = NULL;
     pid_t *processes = NULL;
     int *ready = NULL;
-    int *waiting = NULL;
     int *phase = NULL;
     Barrier *barrier = NULL;
 
@@ -59,7 +58,6 @@ int main(int argc, char const *argv[])
         printf("%d, ", initial[i]);
     }
 
-    waiting = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     ready = mmap(NULL, numThreads * sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     phase = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     barrier = mmap(NULL, sizeof(Barrier), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -189,33 +187,6 @@ int *readIn(int *size)
     return nums;
 }
 
-void synch(int *phase, int *ready, int id, int numThreads, int *waiting)
-{
-    /* a barrier function for all processes, holds all processes from advancing until all have arrived
-     * waiting is a singular int counting the number of processes that have arrived
-     * ready is an array of ints, each index represents a process, and the value at that index represents the number of times that process has arrived
-     * phase is a singular int representing the current phase of the algorithm
-     * id is the id of the current process
-     * numThreads is the number of processes
-     */
-    int i;
-    *waiting = *waiting + 1;
-    for (i = 0; i < numThreads; i++)
-    {
-        while (ready[i] == 0)
-            ;
-    }
-    if (*waiting >= numThreads)
-    {
-        *waiting = 0;
-        *phase = *phase + 1;
-        for (i = 0; i < numThreads; i++)
-        {
-            ready[i] = 0;
-        }
-    }
-}
-
 /**
  * @brief takes a list of numbers and sorts a given pair of indices
  * @param nums the list of numbers
@@ -272,4 +243,5 @@ void barrier_wait(Barrier *barrier)
         {
         }
     }
+    usleep(100);
 }
