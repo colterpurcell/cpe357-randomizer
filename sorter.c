@@ -7,7 +7,6 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <string.h>
-#include <stdatomic.h>
 #include "header.h"
 
 /**
@@ -222,35 +221,34 @@ int compare(int *nums, int index)
     return swap;
 }
 
-void barrier_init(Barrier *barrier, int total_threads)
-{
-    barrier->count = 0;
-    barrier->total_threads = total_threads;
-    barrier->barrier_flag = 0;
-}
-
 void barrier_wait(Barrier *barrier)
 {
-    atomic_fetch_add(&barrier->count, 1);
+    /* Increment the count */
+    __sync_fetch_and_add(&barrier->count, 1);
 
-    if (barrier->count >= barrier->total_threads)
+    /* Busy-wait loop until all threads have reached the barrier */
+    while (barrier->count < barrier->total_threads)
     {
-        barrier->barrier_flag = 1;
     }
-    else
-    {
-        while (barrier->barrier_flag == 0)
-        {
-        }
-    }
-    customDelay(5000000);
+
+    /* Signal that all threads have reached the barrier */
+    barrier->barrier_flag = 1;
+    usleep(1000);
+    /* customDelay(1000); */
 }
 
-void customDelay(unsigned int iterations)
+void customDelay(unsigned int micros)
 {
-    volatile unsigned int i;
-    for (i = 0; i < iterations; ++i)
+    struct timespec start_time, current_time;
+    const long NANOSECONDS_IN_SECOND = 1000000000;
+
+    /* Clock current time */
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+    do
     {
-        /* Do nothing, just loop to introduce delay */
-    }
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+    } while ((current_time.tv_sec - start_time.tv_sec) * NANOSECONDS_IN_SECOND +
+                 (current_time.tv_nsec - start_time.tv_nsec) <
+             micros * 1000);
 }

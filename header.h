@@ -1,8 +1,9 @@
+
 typedef struct
 {
-    atomic_int count;
+    int count;
     int total_threads;
-    atomic_int barrier_flag;
+    int barrier_flag;
 } Barrier;
 
 /* function prototypes */
