@@ -233,8 +233,8 @@ void barrier_wait(Barrier *barrier)
 
     /* Signal that all threads have reached the barrier */
     barrier->barrier_flag = 1;
-    usleep(1000);
-    /* customDelay(1000); */
+    /* usleep(1000); */
+    customDelay(7500);
 }
 
 void customDelay(unsigned int micros)
