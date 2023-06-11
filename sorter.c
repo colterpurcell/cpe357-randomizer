@@ -243,5 +243,17 @@ void barrier_wait(Barrier *barrier)
         {
         }
     }
-    usleep(100);
+    customDelay(100);
+}
+
+void customDelay(unsigned int microseconds)
+{
+    struct timespec start_time, current_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+    do
+    {
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+    } while (((current_time.tv_sec - start_time.tv_sec) * 1000000 +
+              (current_time.tv_nsec - start_time.tv_nsec) / 1000) < microseconds);
 }

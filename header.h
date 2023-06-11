@@ -12,3 +12,4 @@ int evenOddSort(int *, int, int *, int);
 int compare(int *, int);
 void barrier_init(Barrier *, int);
 void barrier_wait(Barrier *);
+void customDelay(unsigned int);
