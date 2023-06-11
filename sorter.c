@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <stdatomic.h>
 #include "header.h"
 
 /**
@@ -26,7 +27,8 @@ int main(int argc, char const *argv[])
     pid_t *processes = NULL;
     int *ready = NULL;
     int *waiting = NULL;
-    int phase = 0;
+    int *phase = NULL;
+    Barrier *barrier = NULL;
 
     if (argc != 2)
     {
@@ -58,9 +60,20 @@ int main(int argc, char const *argv[])
     }
 
     waiting = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    ready = mmap(NULL, numThreads * sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-
+    ready = mmap(NULL, numThreads * sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    phase = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    barrier = mmap(NULL, sizeof(Barrier), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
+    *phase = 1;
+
+    for (i = 0; i < numThreads; i++)
+    {
+        ready[i] = 0;
+    }
+
+    barrier->count = 0;
+    barrier->total_threads = numThreads;
+    barrier->barrier_flag = 0;
 
     /* Create a new process for each portion of the array */
     gettimeofday(&start, NULL);
@@ -74,13 +87,19 @@ int main(int argc, char const *argv[])
         {
             for (iter = 0; iter < size * 2; iter++)
             {
-                ready[id] = 0;
+
                 for (j = id * 2; j < size - 1; j += 2 * numThreads)
                 {
-                    evenOddSort(initial, j, &phase, size);
+                    evenOddSort(initial, j, phase, size);
                 }
-                ready[id] = 1;
-                synch(&phase, ready, id, numThreads, waiting);
+
+                barrier_wait(barrier);
+                if (id == 0)
+                {
+                    *phase = *phase + 1;
+                }
+                for (i = 0; i < 10000; i++)
+                    ;
             }
             return 0;
         }
@@ -172,30 +191,29 @@ int *readIn(int *size)
 
 void synch(int *phase, int *ready, int id, int numThreads, int *waiting)
 {
+    /* a barrier function for all processes, holds all processes from advancing until all have arrived
+     * waiting is a singular int counting the number of processes that have arrived
+     * ready is an array of ints, each index represents a process, and the value at that index represents the number of times that process has arrived
+     * phase is a singular int representing the current phase of the algorithm
+     * id is the id of the current process
+     * numThreads is the number of processes
+     */
     int i;
-    (*waiting)++;
+    *waiting = *waiting + 1;
+    for (i = 0; i < numThreads; i++)
+    {
+        while (ready[i] == 0)
+            ;
+    }
     if (*waiting >= numThreads)
     {
+        *waiting = 0;
+        *phase = *phase + 1;
         for (i = 0; i < numThreads; i++)
         {
-            while (ready[i] != 1)
-            {
-            }
-        }
-        *waiting = 0;
-    }
-    else
-    {
-        while (ready[id] != 1)
-        {
+            ready[i] = 0;
         }
     }
-
-    *phase = *phase + 1;
-    /* if last process to enter, wake all other processes */
-
-    for (i = 0; i < 100000; i++)
-        ;
 }
 
 /**
@@ -231,4 +249,27 @@ int compare(int *nums, int index)
         nums[index + 1] = temp;
     }
     return swap;
+}
+
+void barrier_init(Barrier *barrier, int total_threads)
+{
+    barrier->count = 0;
+    barrier->total_threads = total_threads;
+    barrier->barrier_flag = 0;
+}
+
+void barrier_wait(Barrier *barrier)
+{
+    atomic_fetch_add(&barrier->count, 1);
+
+    if (barrier->count >= barrier->total_threads)
+    {
+        barrier->barrier_flag = 1;
+    }
+    else
+    {
+        while (barrier->barrier_flag == 0)
+        {
+        }
+    }
 }
