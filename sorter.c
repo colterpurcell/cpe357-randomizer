@@ -243,17 +243,14 @@ void barrier_wait(Barrier *barrier)
         {
         }
     }
-    customDelay(100);
+    customDelay(5000000);
 }
 
-void customDelay(unsigned int microseconds)
+void customDelay(unsigned int iterations)
 {
-    struct timespec start_time, current_time;
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-    do
+    volatile unsigned int i;
+    for (i = 0; i < iterations; ++i)
     {
-        clock_gettime(CLOCK_MONOTONIC, &current_time);
-    } while (((current_time.tv_sec - start_time.tv_sec) * 1000000 +
-              (current_time.tv_nsec - start_time.tv_nsec) / 1000) < microseconds);
+        /* Do nothing, just loop to introduce delay */
+    }
 }
