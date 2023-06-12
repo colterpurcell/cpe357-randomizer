@@ -15,7 +15,7 @@
  * @param argv[1] the number of threads to use
  */
 
-int main(int argc, char const *argv[])
+main(int argc, char const *argv[])
 {
     int i;
     int numThreads;
@@ -59,7 +59,7 @@ int main(int argc, char const *argv[])
 
     ready = mmap(NULL, numThreads * sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     phase = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    barrier = mmap(NULL, sizeof(Barrier), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    barrier = barrierInit(numThreads);
     processes = (pid_t *)malloc(numThreads * sizeof(pid_t));
     *phase = 1;
 
@@ -67,10 +67,6 @@ int main(int argc, char const *argv[])
     {
         ready[i] = 0;
     }
-
-    barrier->count = 0;
-    barrier->total_threads = numThreads;
-    barrier->barrier_flag = 0;
 
     /* Create a new process for each portion of the array */
     gettimeofday(&start, NULL);
@@ -221,20 +217,28 @@ int compare(int *nums, int index)
     return swap;
 }
 
-void barrier_wait(Barrier *barrier)
+Barrier *barrierInit(int numThreads)
 {
-    /* Increment the count */
-    __sync_fetch_and_add(&barrier->count, 1);
+    Barrier *barrier = (Barrier *)mmap(NULL, sizeof(Barrier), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    barrier->count = 0;
+    barrier->n_processes = numThreads;
+    barrier->mutex = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    barrier->turnstile = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    return barrier;
+}
 
-    /* Busy-wait loop until all threads have reached the barrier */
-    while (barrier->count < barrier->total_threads)
+void barrierWait(Barrier *barrier)
+{
+    while (barrier->count < barrier->n_processes)
     {
+        while (barrier->mutex == 1)
+            ;
+        (barrier->count)++;
+        barrier->mutex = 1;
+        while (barrier->turnstile == 0)
+            ;
+        barrier->turnstile = 0;
     }
-
-    /* Signal that all threads have reached the barrier */
-    barrier->barrier_flag = 1;
-    /* usleep(1000); */
-    customDelay(7500);
 }
 
 void customDelay(unsigned int micros)

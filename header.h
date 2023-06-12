@@ -1,9 +1,10 @@
 
-typedef struct
+typedef struct Barrier
 {
+    int n_processes;
     int count;
-    int total_threads;
-    int barrier_flag;
+    int mutex;
+    int turnstile;
 } Barrier;
 
 /* function prototypes */
@@ -11,6 +12,6 @@ int *generate(int);
 int *readIn(int *);
 int evenOddSort(int *, int, int *, int);
 int compare(int *, int);
-void barrier_init(Barrier *, int);
-void barrier_wait(Barrier *);
+Barrier *barrierInit(int);
+void barrierWait(Barrier *);
 void customDelay(unsigned int);
